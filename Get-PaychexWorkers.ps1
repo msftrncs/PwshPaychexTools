@@ -17,7 +17,7 @@ $log_file = @{
     Encoding = 'UTF8'
 }
 
-"`r`n$(Get-Date)-Paychex Team Member Merge script starting!" | Out-File @log_file
+"`r`n$(Get-Date) INFO Paychex Team Member Merge script starting!" | Out-File @log_file
 
 # get authorization to the API
 if (test-path variable:auth_result) {Remove-Variable auth_result}
@@ -39,7 +39,7 @@ if ($auth_result) {
         if (test-path variable:workers_result) {Remove-Variable workers_result}
         $workers_result = Invoke-RestMethod -uri "$paychex_uri/companies/$companyId/workers" -headers $auth_header
         if ($workers_result) {
-            "$(Get-Date)-Paychex Workers Count=$($workers_result.content.Count)" | Out-File @log_file
+            "$(Get-Date) INFO Paychex Workers Count=$($workers_result.content.Count)" | Out-File @log_file
 
             # create a table object to transfer the workers to the database team member merge procedure
             $TCEmpList = [Data.DataTable]::new()
@@ -71,7 +71,7 @@ if ($auth_result) {
             $sqlResult = $sqlcmd.ExecuteNonQuery()
             $sqlcmd.Connection.Close()
 
-            "$(Get-Date)-SQL Merge Result=$sqlResult" | Out-File @log_file
+            "$(Get-Date) INFO SQL Merge Result=$sqlResult" | Out-File @log_file
 
             <# ## test transfer to database, validate user type definition, data transformations
             $dt = New-Object 'Data.DataTable'
@@ -92,17 +92,17 @@ if ($auth_result) {
         }
         else {
             # no workers were returned, this is probably not right, $error should be recorded to a log
-            "$(Get-Date)-No result for Paychex workers request!  Error log follows:`r`n$error" | Out-File @log_file
+            "$(Get-Date) ERROR No result for Paychex workers request!  Error log follows:`r`n$error" | Out-File @log_file
         }
     }
     else {
         # could not find matching company ID, $error should be recorded to a log
-        "$(Get-Date)-No result for Paychex company ID ($comp_DisplayId) lookup!  Error log follows:`r`n$error" | Out-File @log_file
+        "$(Get-Date) ERROR No result for Paychex company ID ($comp_DisplayId) lookup!  Error log follows:`r`n$error" | Out-File @log_file
     }
 }
 else {
     # could not get an authorization to the Paychex API, $error should be recorded to a log
-    "$(Get-Date)-No result for Paychex authorization request!  Error log follows:`r`n$error" | Out-File @log_file
+    "$(Get-Date) ERROR No result for Paychex authorization request!  Error log follows:`r`n$error" | Out-File @log_file
 }
 
-"$(Get-Date)-Paychex Team Member Merge script terminating!" | Out-File @log_file
+"$(Get-Date) INFO Paychex Team Member Merge script terminating!" | Out-File @log_file
