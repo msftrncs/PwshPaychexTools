@@ -11,9 +11,13 @@ $client_id = '' # Client ID from the Paychex API account
 $client_secret = '' # Client ID from the Paychex API account
 $comp_DisplayId = '11061545' # sandbox company
 $sqlConnString = 'Data Source=Server\Instance;Initial Catalog=InitCatalog;Integrated Security=True'
-$log_file = 'Path To\Paychex.log'
+$log_file = @{
+    FilePath = 'Path To\Paychex.log'
+    Append   = $true
+    Encoding = 'UTF8'
+}
 
-"`r`n$(Get-Date)-Paychex Team Member Merge script starting!" | Out-File $log_file -Append
+"`r`n$(Get-Date)-Paychex Team Member Merge script starting!" | Out-File @log_file
 
 # get authorization to the API
 if (test-path variable:auth_result) {Remove-Variable auth_result}
@@ -35,10 +39,10 @@ if ($auth_result) {
         if (test-path variable:workers_result) {Remove-Variable workers_result}
         $workers_result = Invoke-RestMethod -uri "$paychex_uri/companies/$companyId/workers" -headers $auth_header
         if ($workers_result) {
-            "$(Get-Date)-Paychex Workers Count=$($workers_result.content.Count)" | Out-File $log_file -Append
+            "$(Get-Date)-Paychex Workers Count=$($workers_result.content.Count)" | Out-File @log_file
 
             # create a table object to transfer the workers to the database team member merge procedure
-            $TCEmpList = New-Object 'Data.DataTable'
+            $TCEmpList = [Data.DataTable]::new()
             $TCEmpList.PrimaryKey = $TCEmpList.Columns.Add('TCEID', [Int32])
             $TCEmpList.Columns.Add('FirstName', [String]) | Out-Null
             $TCEmpList.Columns.Add('LastName', [String]) | Out-Null
@@ -56,46 +60,49 @@ if ($auth_result) {
 
             # send data table to stored procedure on the database to merge with Personnel List
             if (test-path variable:sqlResult) {Remove-Variable sqlResult}
-            $sqlcmd = New-Object 'Data.SqlClient.SqlCommand' -ArgumentList 'dbo.ImportTCEmployeeList'
+            $sqlcmd = [Data.SqlClient.SqlCommand]::new('dbo.ImportTCEmployeeList')
             $sqlcmd.CommandType = [Data.CommandType]::StoredProcedure
             $sqlcmd.Parameters.Add('@TCEmpList', [Data.SQLDBType]::Structured) | Out-Null
             $sqlcmd.Parameters['@TCEmpList'].Value = $TCEmpList
             $sqlcmd.Parameters['@TCEmpList'].TypeName = 'dbo.ut_tv_TCEmployeeList'
-            ##$sqlcmd.Parameters['@TCEmpList'].Direction = 'Input'  #  this is the default value
-            $sqlcmd.Connection = New-Object 'Data.SqlClient.SqlConnection' -ArgumentList $sqlConnString
+            ##$sqlcmd.Parameters['@TCEmpList'].Direction = [Data.SqlClient.SqlParameter]::Input  #  this is the default value
+            $sqlcmd.Connection = [Data.SqlClient.SqlConnection]::new($sqlConnString)
             $sqlcmd.Connection.Open()
             $sqlResult = $sqlcmd.ExecuteNonQuery()
             $sqlcmd.Connection.Close()
 
-            "$(Get-Date)-SQL Merge Result=$sqlResult" | Out-File $log_file -Append
+            "$(Get-Date)-SQL Merge Result=$sqlResult" | Out-File @log_file
 
             <# ## test transfer to database, validate user type definition, data transformations
             $dt = New-Object 'Data.DataTable'
-            $sqlcmd = New-Object 'System.Data.SqlClient.SqlCommand' -ArgumentList 'SELECT tcel.TCEID, pl.TCEID, tcel.Inactive, pl.Inactive, tcel.FirstName, tcel.LastName, pl.[Team Member] FROM @TCEmpList tcel LEFT JOIN dbo.[Personnel List] pl ON tcel.TCEID = pl.TCEID ORDER BY pl.[Team Member]'
+            $sqlcmd = [Data.SqlClient.SqlCommand]::new(
+                'SELECT tcel.TCEID, pl.TCEID, tcel.Inactive, pl.Inactive, tcel.FirstName, 
+                 tcel.LastName, pl.[Team Member] FROM @TCEmpList tcel LEFT JOIN dbo.[Personnel List] pl 
+                 ON tcel.TCEID = pl.TCEID ORDER BY pl.[Team Member]')
             #$sqlcmd.CommandType = [Data.CommandType]::Text
             $sqlcmd.Parameters.Add('@TCEmpList',[Data.SQLDBType]::Structured) | Out-Null
             $sqlcmd.Parameters['@TCEmpList'].Value = $TCEmpList
             $sqlcmd.Parameters['@TCEmpList'].TypeName = "dbo.ut_tv_TCEmployeeList"
-            $sqlcmd.Connection = New-Object 'Data.SqlClient.SqlConnection' -ArgumentList $sqlConnString
+            $sqlcmd.Connection = [Data.SqlClient.SqlConnection]::new($sqlConnString)
             $sqlcmd.Connection.Open()
-            $da = New-Object 'System.Data.SqlClient.SqlDataAdapter' -ArgumentList $sqlcmd
+            $da = [System.Data.SqlClient.SqlDataAdapter]::new($sqlcmd)
             $da.Fill($dt)
             $sqlcmd.Connection.Close()
             #>
         }
         else {
             # no workers were returned, this is probably not right, $error should be recorded to a log
-            "$(Get-Date)-No result for Paychex workers request!  Error log follows:`r`n$error" | Out-File $log_file -Append
+            "$(Get-Date)-No result for Paychex workers request!  Error log follows:`r`n$error" | Out-File @log_file
         }
     }
     else {
         # could not find matching company ID, $error should be recorded to a log
-        "$(Get-Date)-No result for Paychex company ID ($comp_DisplayId) lookup!  Error log follows:`r`n$error" | Out-File $log_file -Append
+        "$(Get-Date)-No result for Paychex company ID ($comp_DisplayId) lookup!  Error log follows:`r`n$error" | Out-File @log_file
     }
 }
 else {
     # could not get an authorization to the Paychex API, $error should be recorded to a log
-    "$(Get-Date)-No result for Paychex authorization request!  Error log follows:`r`n$error" | Out-File $log_file -Append
+    "$(Get-Date)-No result for Paychex authorization request!  Error log follows:`r`n$error" | Out-File @log_file
 }
 
-"$(Get-Date)-Paychex Team Member Merge script terminating!" | Out-File $log_file -Append
+"$(Get-Date)-Paychex Team Member Merge script terminating!" | Out-File @log_file
