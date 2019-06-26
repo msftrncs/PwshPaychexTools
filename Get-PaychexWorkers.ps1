@@ -22,9 +22,9 @@ $log_file = @{
 "`r`n$(Get-Date) INFO Paychex Team Member Merge script starting!" | Out-File @log_file
 
 # get authorization to the API
-if (test-path variable:auth_result) { Remove-Variable auth_result }
+if (test-path variable:local:auth_result) { Remove-Variable auth_result }
 $auth_result = Invoke-RestMethod -Method Post -Uri "$paychex_uri/auth/oauth/v2/token?grant_type=client_credentials&client_id=$client_id&client_secret=$client_secret"
-if ($auth_result) {
+if ($local:auth_result) {
     # create base authorization header for future requests
     $auth_header = @{'Authorization' = "$($auth_result.token_type) $($auth_result.access_token)" }
 
@@ -32,15 +32,15 @@ if ($auth_result) {
     #$companies_result = invoke-RestMethod -uri "$paychex_uri/companies" -headers $auth_header
 
     # find the companyId based on the displayId ($comp_DisplayId)
-    if (test-path variable:companyId) { Remove-Variable companyId }
+    if (test-path variable:local:companyId) { Remove-Variable companyId }
     $companyId = (Invoke-RestMethod -uri "$paychex_uri/companies?displayid=$comp_DisplayId" -headers $auth_header).content.companyId
     #$companyId = (Invoke-RestMethod -uri "$paychex_uri/companies?displayid=$comp_DisplayId" -Authentication Bearer -Token $auth_result.access_token).content.companyId  ## requires PS 6.0!
-    if ($companyId) {
+    if ($local:companyId) {
 
         # get the workers for the company found by display ID
-        if (test-path variable:workers_result) { Remove-Variable workers_result }
+        if (test-path variable:local:workers_result) { Remove-Variable workers_result }
         $workers_result = Invoke-RestMethod -uri "$paychex_uri/companies/$companyId/workers" -headers $auth_header
-        if ($workers_result) {
+        if ($local:workers_result) {
             "$(Get-Date) INFO Paychex Workers Count=$($workers_result.content.Count)" | Out-File @log_file
 
             # create a table object to transfer the workers to the database team member merge procedure
@@ -62,38 +62,36 @@ if ($auth_result) {
 
             if (-not $test) {
                 # send data table to stored procedure on the database to merge with Personnel List
-                if (test-path variable:sqlResult) { Remove-Variable sqlResult }
-                $sqlcmd = [Data.SqlClient.SqlCommand]::new('dbo.ImportTCEmployeeList')
-                $sqlcmd.CommandType = [Data.CommandType]::StoredProcedure
-                $sqlcmd.Parameters.Add('@TCEmpList', [Data.SQLDBType]::Structured) | Out-Null
-                $sqlcmd.Parameters['@TCEmpList'].Value = $TCEmpList
-                $sqlcmd.Parameters['@TCEmpList'].TypeName = 'dbo.ut_tv_TCEmployeeList'
-                ##$sqlcmd.Parameters['@TCEmpList'].Direction = [Data.SqlClient.SqlParameter]::Input  #  this is the default value
-                $sqlcmd.Connection = [Data.SqlClient.SqlConnection]::new($sqlConnString)
-                $sqlcmd.Connection.Open()
-                $sqlResult = $sqlcmd.ExecuteNonQuery()
-                $sqlcmd.Connection.Close()
+                if (test-path variable:local:sqlResult) { Remove-Variable sqlResult }
+                $sqlCmd = [Data.SqlClient.SqlCommand]::new('dbo.ImportTCEmployeeList', [Data.SqlClient.SqlConnection]::new($sqlConnString))
+                $sqlCmd.CommandType = [Data.CommandType]::StoredProcedure
+                $sqlCmd.Parameters.Add('@TCEmpList', [Data.SQLDBType]::Structured) | Out-Null
+                $sqlCmd.Parameters['@TCEmpList'].Value = $TCEmpList
+                $sqlCmd.Parameters['@TCEmpList'].TypeName = 'dbo.ut_tv_TCEmployeeList'
+                ##$sqlCmd.Parameters['@TCEmpList'].Direction = [Data.SqlClient.SqlParameter]::Input  #  this is the default value
+                $sqlCmd.Connection.Open()
+                $sqlResult = $sqlCmd.ExecuteNonQuery()
+                $sqlCmd.Connection.Close()
 
                 "$(Get-Date) INFO SQL Merge Result=$sqlResult" | Out-File @log_file
             } else {
                 # test transfer to database, validate user type definition, data transformations
-                $sqlcmd = [Data.SqlClient.SqlCommand]::new('
+                $sqlCmd = [Data.SqlClient.SqlCommand]::new('
                     SELECT tcel.TCEID tc_TCEID, pl.TCEID pl_TCEID, tcel.Inactive tc_Inactive, pl.Inactive pl_Inactive,
                     tcel.FirstName tc_FirstName, tcel.LastName tc_LastName, pl.[Team Member] FROM @TCEmpList tcel FULL OUTER JOIN 
-                    dbo.[Personnel List] pl ON tcel.TCEID = pl.TCEID ORDER BY pl.[Team Member]')
-                #$sqlcmd.CommandType = [Data.CommandType]::Text
-                $sqlcmd.Parameters.Add('@TCEmpList',[Data.SQLDBType]::Structured) | Out-Null
-                $sqlcmd.Parameters['@TCEmpList'].Value = $TCEmpList
-                $sqlcmd.Parameters['@TCEmpList'].TypeName = "dbo.ut_tv_TCEmployeeList"
-                $sqlcmd.Connection = [Data.SqlClient.SqlConnection]::new($sqlConnString)
-                $sqlcmd.Connection.Open()
-                $da = [System.Data.SqlClient.SqlDataAdapter]::new($sqlcmd)
-                $dt = [Data.DataTable]::new()
-                $da.Fill($dt)
-                $sqlcmd.Connection.Close()
+                    dbo.[Personnel List] pl ON tcel.TCEID = pl.TCEID ORDER BY pl.[Team Member]',
+                    [Data.SqlClient.SqlConnection]::new($sqlConnString))
+                #$sqlCmd.CommandType = [Data.CommandType]::Text
+                $sqlCmd.Parameters.Add('@TCEmpList', [Data.SQLDBType]::Structured) | Out-Null
+                $sqlCmd.Parameters['@TCEmpList'].Value = $TCEmpList
+                $sqlCmd.Parameters['@TCEmpList'].TypeName = "dbo.ut_tv_TCEmployeeList"
+                $sqlAdapter = [Data.SqlClient.SqlDataAdapter]::new($sqlCmd)
+                $sqlCmd.Connection.Open()
+                $sqlAdapter.Fill(($sqlResultData = [Data.DataTable]::new()))
+                $sqlCmd.Connection.Close()
 
-                $dt # output the resulting table
-                "$(Get-Date) INFO SQL Test Completed, $($dt.Count) Merged Records Returned" | Out-File @log_file
+                $sqlResultData.Rows # output the resulting data rows
+                "$(Get-Date) INFO SQL Test Completed, $(if ($sqlResultData.Rows) {$sqlResultData.Rows.Count} else {'No'}) Merged Records Returned" | Out-File @log_file
             }
         } else {
             # no workers were returned, this is probably not right, $error should be recorded to a log
