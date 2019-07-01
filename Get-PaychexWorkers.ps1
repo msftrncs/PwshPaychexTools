@@ -27,6 +27,7 @@ $auth_result = Invoke-RestMethod -Method Post -Uri "$paychex_uri/auth/oauth/v2/t
 if ($local:auth_result) {
     # create base authorization header for future requests
     $auth_header = @{'Authorization' = "$($auth_result.token_type) $($auth_result.access_token)" }
+    "$(Get-Date) INFO Paychex Access Granted, Token Type: '$($auth_result.token_type)', Scope: '$($auth_result.scope)', Expires in: $([int]$auth_result.expires_in)s" | Out-File @log_file
 
     # we shouldn't need to get a list of companies in the final app, because this app is only planned to have one company.
     #$companies_result = invoke-RestMethod -uri "$paychex_uri/companies" -headers $auth_header
