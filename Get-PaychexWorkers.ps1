@@ -88,10 +88,10 @@ if ($local:auth_result) {
                 $sqlCmd.Parameters['@TCEmpList'].TypeName = "dbo.ut_tv_TCEmployeeList"
                 $sqlAdapter = [Data.SqlClient.SqlDataAdapter]::new($sqlCmd)
                 $sqlCmd.Connection.Open()
-                $sqlAdapter.Fill(($sqlResultData = [Data.DataTable]::new()))
+                $sqlAdapter.Fill(($sqlResultData = [Data.DataTable]::new())) | Out-Null
                 $sqlCmd.Connection.Close()
 
-                $sqlResultData.Rows # output the resulting data rows
+                $sqlResultData # output the resulting data table
                 "$(Get-Date) INFO SQL Test Completed, $(if ($sqlResultData.Rows) {$sqlResultData.Rows.Count} else {'No'}) Merged Records Returned" | Out-File @log_file
             }
         } else {
