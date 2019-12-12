@@ -1,6 +1,9 @@
 # Access the Paychex API, download the workers list, and merge the results with the Personnel List in the database.
 # This is just a sample.  You must have a Client ID and Client Secret to a working API account with Paychex.
 # You must also supply database connection strings, and alter to match your database requirements.  This is just a demonstration.
+using namespace System.Data
+using namespace System.Data.SqlClient
+
 param(
     [switch]$test # test paychex api and database connectivity, but change no data
 )
@@ -45,11 +48,11 @@ if ($local:auth_result) {
             "$(Get-Date) INFO Paychex Workers Count=$($workers_result.content.Count)" | Out-File @log_file
 
             # create a table object to transfer the workers to the database team member merge procedure
-            $TCEmpList = [Data.DataTable]::new()
+            $TCEmpList = [DataTable]::new()
             $TCEmpList.PrimaryKey = $TCEmpList.Columns.Add('TCEID', [Int32])
-            $TCEmpList.Columns.Add('FirstName', [String]) | Out-Null
-            $TCEmpList.Columns.Add('LastName', [String]) | Out-Null
-            $TCEmpList.Columns.Add('Inactive', [Boolean]) | Out-Null
+            $TCEmpList.Columns.AddRange( ([DataColumn]::new('FirstName', [String]),
+                [DataColumn]::new('LastName', [String]),
+                [DataColumn]::new('Inactive', [Boolean])) )
 
             # translate each worker record from web result to data table
             ForEach ($worker in $workers_result.Content) {
@@ -64,11 +67,10 @@ if ($local:auth_result) {
             if (-not $test) {
                 # send data table to stored procedure on the database to merge with Personnel List
                 if (test-path variable:local:sqlResult) { Remove-Variable sqlResult }
-                $sqlCmd = [Data.SqlClient.SqlCommand]::new('dbo.ImportTCEmployeeList', [Data.SqlClient.SqlConnection]::new($sqlConnString))
-                $sqlCmd.CommandType = [Data.CommandType]::StoredProcedure
-                $sqlCmd.Parameters.Add('@TCEmpList', [Data.SQLDBType]::Structured) | Out-Null
-                $sqlCmd.Parameters['@TCEmpList'].Value = $TCEmpList
-                $sqlCmd.Parameters['@TCEmpList'].TypeName = 'dbo.ut_tv_TCEmployeeList'
+                $sqlCmd = [SqlCommand]::new('dbo.ImportTCEmployeeList', [SqlConnection]::new($sqlConnString))
+                $sqlCmd.CommandType = [CommandType]::StoredProcedure
+                $sqlCmd.Parameters.Add('TCEmpList', [SqlDbType]::Structured).Value = $TCEmpList
+                $sqlCmd.Parameters['TCEmpList'].TypeName = 'dbo.ut_tv_TCEmployeeList'
                 ##$sqlCmd.Parameters['@TCEmpList'].Direction = [Data.SqlClient.SqlParameter]::Input  #  this is the default value
                 $sqlCmd.Connection.Open()
                 $sqlResult = $sqlCmd.ExecuteNonQuery()
@@ -77,18 +79,18 @@ if ($local:auth_result) {
                 "$(Get-Date) INFO SQL Merge Result=$sqlResult" | Out-File @log_file
             } else {
                 # test transfer to database, validate user type definition, data transformations
-                $sqlCmd = [Data.SqlClient.SqlCommand]::new('
+                if (test-path variable:local:sqlResultData) { Remove-Variable sqlResultData }
+                $sqlCmd = [SqlCommand]::new('
                     SELECT tcel.TCEID tc_TCEID, pl.TCEID pl_TCEID, tcel.Inactive tc_Inactive, pl.Inactive pl_Inactive,
                     tcel.FirstName tc_FirstName, tcel.LastName tc_LastName, pl.[Team Member] FROM @TCEmpList tcel FULL OUTER JOIN 
                     dbo.[Personnel List] pl ON tcel.TCEID = pl.TCEID ORDER BY pl.[Team Member]',
-                    [Data.SqlClient.SqlConnection]::new($sqlConnString))
+                    [SqlConnection]::new($sqlConnString))
                 #$sqlCmd.CommandType = [Data.CommandType]::Text
-                $sqlCmd.Parameters.Add('@TCEmpList', [Data.SQLDBType]::Structured) | Out-Null
-                $sqlCmd.Parameters['@TCEmpList'].Value = $TCEmpList
+                $sqlCmd.Parameters.Add('@TCEmpList', [SqlDbType]::Structured).Value = $TCEmpList
                 $sqlCmd.Parameters['@TCEmpList'].TypeName = "dbo.ut_tv_TCEmployeeList"
-                $sqlAdapter = [Data.SqlClient.SqlDataAdapter]::new($sqlCmd)
+                $sqlAdapter = [SqlDataAdapter]::new($sqlCmd)
                 $sqlCmd.Connection.Open()
-                $sqlAdapter.Fill(($sqlResultData = [Data.DataTable]::new())) | Out-Null
+                $sqlAdapter.Fill(($sqlResultData = [DataTable]::new())) | Out-Null
                 $sqlCmd.Connection.Close()
 
                 $sqlResultData # output the resulting data table
